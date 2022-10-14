@@ -1,6 +1,6 @@
 //@ts-check
 /// <reference path="./lattices.js" />
-/// <reference path="./types.js" />
+/// <reference path="./other-tests/types.js" />
 
 
 caph.injectStyle(`
