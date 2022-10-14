@@ -87,9 +87,8 @@ All the algorithms presented compute the maximal join-endomorphism below a given
 The implementations are based on the following abstract algorithms that do not indicate how to find the pairs $a,b$.
 
 <figure class="algorithm bold">
-$\mathtt{GMeet}(f, g)$:
+$\mathtt{GMeet}(h)$:
 <div class="indent-1em">
-  $h \eqdef f \meetF g$<br>
   while $\exists a,b\in L$ <span>with</span> $h(a\join b) \neq h(a)\join h(b)$:
   <div class="indent-1em">
     if $h(a\join b) \sqgt h(a) \join h(b)$:
@@ -115,7 +114,7 @@ $\mathtt{GMeet}(f, g)$:
 </div>
 </div> -->
 <figcaption>
-`GMeet` algorithm.
+`GMeet` algorithm. $\mathtt{GMeet}(f \meetF g) \eqdef f \meetE g$.
 </figcaption>
 </figure>
 
@@ -140,7 +139,7 @@ $\mathtt{GMeetMono}(f, g)$:
 (Same context and inputs as `GMeet`)
 </div> -->
 <figcaption>
-`GMeetMono` algorithm.
+`GMeetMono` algorithm. $\mathtt{GMeetMono}(f \meetF g) \eqdef f \meetE g$.
 </figcaption>
 </figure>
 
