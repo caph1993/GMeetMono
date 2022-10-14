@@ -113,18 +113,6 @@ $\mathtt{GMeet}(f, g)$:
 </figcaption>
 </figure>
 
-
-`GMeet` starts letting $h = f\meetF g$, which is an upper bound for $f\meetE g$.
-Then, it successively finds conflicts of the form $h(a\join b) \neq h(a)\join h(b)$ and resolves them by making changes to $h$, always downwards, and never further down than the objective $f\meetE g$.
-More precisely, letting $h$ and $h'$ be the functions before and after an iteration of the `while` loop in `GMeet`, the following invariant is preserved:
-$$
-(f\meetE g) \sqleqF h' \sqltF h \sqleqF (f \meetF g).
-$$
-This invariant is proved in the paper...
-Taking into account that the algorithm is always making changes ($h' \sqltF h$) in the finite lattice $\calF$, and that $h$ satisfies $h\in\calE$ if and only if it has no conflicts, it is clear that this invariant guarantees both the termination and success of the algorithm.
-
-If we enforce the monotonicity of $h$ as an invariant in `GMeet`, we derive the `GMeetMono` algorithm, shown below.
-
 <figure class="algorithm bold">
 $\mathtt{GMeetMono}(f, g)$:
 <div class="indent-1em">
@@ -146,46 +134,14 @@ $\mathtt{GMeetMono}(f, g)$:
 (Same context and inputs as `GMeet`)
 </div> -->
 <figcaption>
-`GMeetMono` algorithm proposed in this document.
-The algorithm is also abstract as it does not tell how to choose $a,b$.
+`GMeetMono` algorithm.
 </figcaption>
 </figure>
 
-`GMeetMono` preserves the same invariant of `GMeet` on each iteration of the `while` loop, but in addition, it guarantees that $h'$ is monotone, i.e. $h'(a) \sqleq h'(b)$ for all $a\sqleq b$.
-Monotonicity implies that all conflicts are of the form $h(a\join b) \sqgt h(a)\join h(b)$, hence only one of the rules in `GMeet` should be applied.
-After applying it, the change is propagated from $a\join b$ down in $L$ in order for $h'$ to be monotone.
-This update of all descendants of $a\join b$ is compatible with the invariant of `GMeet` because the target $f\meetE g$ is always monotonic.
 
+<h2>Implementations</h2>
 
-A remarkable fact about both algorithms is that they serve to accomplish a more general task than finding the meet $f \meetE g$ of two join-endomorphisms.
-It can be shown** (Frank and Carlos Pinzón agree on this) that for every monotone function $h\in\calF$, the concept of a <i>maximal join-endomorphism $h^*$ below $h$</i> is well-defined.
-If we ignore the first step of the algorithms, and assume the input to be an arbitrary monotone function $h$, then the algorithms are effectively finding this maximal $h^*\in\calE$ with $h^*\sqleqF h$.
-
-**This follows easily and directly from the fact that $\joinF=\joinE$, because for any $f$, if there were two different maximal functions $f_1,f_2\in\calE$ below $f$, then $f\geq f_1 \joinF f_2 = f_1 \joinE f_2 \in \calE$, which is absurd.
-
-Using the same argument, the <i>maximal monotone $h^*$ below $h$</i> is also well-defined.
-
-Before entering into the algorithms, we present the following demo in which you can run tests with random functions on random lattices.
-<!-- The tests generate randomly a monotone function $h$, feeds it to each of the available implementations, and checks that the outputs match.
-For the particular goal of computing $f \meetE g$, the input $h$ would be $f \meetF g$, but the tests are carried out in general for arbitrary monotone input functions. -->
-
-<!-- For the comparison, we will run `GMeet`, i.e. Santiago's improvements to `GMeet`, which is $O(n^3)$, unlike the naïve implementation of `GMeet` of $O(n^4)$. -->
-
-
-The `GMeet` algorithm is implemented as `GMeetNaive`, which uses a double for loop for the existence check, repeating until no conflicts exist.
-The complexity of this algorithm is theoretically $O(n^4)$ because each node may decrease its value at most $n$ times, hence at most $n^2$ updates to conflicts will be performed, each requiring $n^2$ tests to find the respective conflict.
-
-A theoretical improvement for `GMeet` is `GMeetPlus`, which has a worst-case complexity of $O(n^3)$ instead of $O(n^4)$, however, as you can notice live from the tests, `GMeet` performs less operations on average than `GMeet`.
-EVEN IN THE WORST CASES!!
-
-The idea of `GMeetPlus` is to keep track of the pairs $a,b$ that may potentially be in conflict to speed up the main loop.
-The details are in the paper??, as well as the explanation of why it is $O(n^3)$.
-
-In the implementation, I must warn that there is a step of which I am not convinced.
-Namely, when we clear `sup[xy]`, I do not fully understand why `con[xy]` is unaltered.
-I need someone to explain me that part.
-
-The following variables that are used in the algorithms are present in the lattice `L` and are assumed to be precomputed:
+Notation following variables that are used in the algorithms are present in the lattice `L` and are assumed to be precomputed:
 ```javascript
 const {n, m, lub, leq, glb, geq, gt, lt, children, isChild,
   walkDown, walkUp, parents, top, bottom, topoUpDown, topoDownUp} = L;
@@ -203,11 +159,9 @@ Notation:
 `parents[a]` is the list of (direct) parents of $a$.
 
 
-
 The implementation of the algorithms, including the counters is shown below.
 
 <div (component)="implementations"></div>
-
 
 
 </div>
@@ -216,18 +170,8 @@ The implementation of the algorithms, including the counters is shown below.
 
 <div id="root">Loading page... Please reload the page if it does not load automatically after 5 seconds</div>
 
-<script>
-(async()=>{
-  for(let src of ["./lattices.js", "./GMeetMono.js"]){
-    const e = document.createElement('script');
-    e.src = src+location.search; // Needed in private mode!
-    document.body.appendChild(e);
-    //@ts-ignore
-    await caph.until(()=>window["latticeAlgorithms"]);
-  }
-})();
-</script>
-
+<script src="./lattices.js"></script>
+<script src="./GMeetMono.js"></script>
 
 </body>
 </html>
