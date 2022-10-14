@@ -63,6 +63,9 @@ This document presents the implementation and tests of `GMeetStar`, `GMeetMonoSt
 
 <div (component)="latticeCode"></div>
 
+
+<h2>Notation</h2>
+
 Throughout this document we use the following notation.
 $L$ is a non-empty finite lattice with order $\sqleq$ and join and meet operators $\join, \meet$.
 The bottom element of $L$ is $\bot$.
@@ -75,6 +78,9 @@ The endomorphisms that preserve least upper bounds and map $\bot$ to $\bot$ are 
 $$
 The order $\sqleqE$ for $\calE$ is defined as the restriction of $\sqleqF$ to $\calE$, and with this order, $\calE$ is also a lattice.
 The join operator $\joinE$ coincides with $\joinF$ (pointwise $\join$), but the meet $\meetF$ does not coincide with $\meetF$.
+
+
+<h2>Algorithms of reference</h2>
 
 All the algorithms presented compute the maximal join-endomorphism below a given endomorphism.
 
