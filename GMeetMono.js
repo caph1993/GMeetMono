@@ -1,6 +1,7 @@
 //@ts-check
 /// <reference path="./lattices.js" />
 /// <reference path="./other-tests/types.js" />
+/// <reference path="./xxhash.js"/>
 
 
 caph.injectStyle(`
@@ -18,6 +19,29 @@ caph.pluginDefs['implementations'] = ({})=>{
   </>
   `
 }
+
+
+caph.injectStyle(`
+#graph {
+  text-align: center;
+  background-color: white; overflow-x:clip;
+  box-shadow: 0px 0px 10px 0px black;
+  margin: 5px;
+}
+`)
+caph.pluginDefs['viz'] = ({vizCode})=>{
+  const [html, setHtml] = preact.useState(caph.parse``);
+  preact.useEffect(async ()=>{
+    if(!vizCode){ setHtml(null); return;}
+    setHtml(caph.parse`<div id="graph" />`);
+    await caph.until(()=>document.querySelector('#graph'));
+    d3.select("#graph").graphviz().renderDot(vizCode);
+  },[vizCode]);
+  return html;
+}
+
+
+
 
 /** @param {{lattice:Lattice?}} props */
 caph.pluginDefs['vizLattice'] = ({lattice})=>{
@@ -39,6 +63,97 @@ caph.pluginDefs['vizLattice'] = ({lattice})=>{
 }
 
 
+
+
+const algoNames = [...Object.keys(latticeAlgorithms(Lattice.powerset(1)))];
+const latticeAlgorithmsWithCounters = (L)=>{
+  const _algos = latticeAlgorithms(L);
+  return algoNames.map(name=>({
+    name, algorithm:_algos[name],
+    fails:0, failExample:null,
+    timeSum:0, timeAvg:0, timeMax:0,
+    cntSum:0, cntMax:0, 
+  }));
+}
+
+const typesOfF = [
+  'join of monotone and join-endomorphism',
+  'monotone',
+  'meet of join-endomorphisms',
+  'arbitrary',
+  'join-endomorphism',
+];
+
+/** @param {Lattice} L @param {any} algos @param {number} ntc @param {string} typeOfF*/ 
+const tests = function*(L, algos, ntc, typeOfF){
+  //console.log(L);
+  const fails = {};
+  const failExample = {};
+  const outputs = {};
+  // hashRolling();
+
+  const batchSize = L.n<=20? ntc: Math.min(ntc, L.n>100? 3: Math.max(50, ntc>>2));
+  // Small batches only valid for large n, where executions take at least 1ms
+
+  const seenInputs = new Set();
+  const seenOutputs = new Set();
+  for(let tc=0; tc<ntc; tc+=batchSize){
+    const inputs = [];
+    const thisBatch = Math.min(batchSize, ntc-tc);
+    for(let _ of range(thisBatch)){
+      let h = (()=>{let f,g; let {n,glb,lub} = L; switch(typeOfF){
+        case 'arbitrary': return L.randomArbitraryF();
+        case 'monotone': return L.randomMonotoneF();
+        case 'join-endomorphism': return L.randomJoinF();
+        case 'meet of join-endomorphisms':
+          f = L.randomJoinF();
+          g = L.randomJoinF();
+          return range(n).map(x=>glb[f[x]][g[x]]);
+        case 'join of monotone and join-endomorphism':
+          f = L.randomMonotoneF();
+          g = L.randomJoinF();
+          return range(n).map(x=>lub[f[x]][g[x]]);
+        default: throw `type ${typeOfF} not in ${typesOfF}`;
+      }})();
+      seenInputs.add(hashRolling(h));
+      inputs.push(h);
+    }
+    let expected = [];
+    let first = true;
+    for(let e of algos){
+      const start = Date.now();
+      const outputs = inputs.map(h=>e.algorithm([...h]));
+      const msElapsed = (Date.now()-start); // caution! integer!
+      if(first){
+        expected = outputs.map(({h})=>h);
+        for(let h of expected) seenOutputs.add(hashRolling(h));
+      }
+      first = false;
+      
+      e.timeSum += msElapsed*1e-3;
+      e.timeAvg = e.timeSum/(tc+thisBatch);
+      e.cntSum += d3.sum(outputs, d=>d.cnt);
+      e.cntMax = Math.max(e.cntMax, d3.max(outputs, d=>d.cnt));
+
+      for(let [h, out, exp] of d3.zip(inputs, outputs.map(({h})=>h), expected)){
+        if(d3.some(d3.zip(out, exp), ([a,b])=>a!=b)){
+          e.fails++;
+          if(!e.failExample) e.failExample = {input:h, output:out, expectedOutput: exp};
+        }
+      }
+    }
+    yield {outputs, fails, failExample, 
+      different: {
+        inputs:seenInputs.size,
+        outputs:seenOutputs.size,
+      },
+      progress: tc+thisBatch,
+    };
+  }
+}
+
+
+
 caph.injectStyle(`
 .test-results {border-collapse:collapse; margin:auto;}
 .test-results td,.test-results th{
@@ -51,71 +166,15 @@ caph.injectStyle(`
 `)
 caph.pluginDefs['latticeCode'] = (()=>{
 const emergency = {stop:false};
-const algoNames = [...Object.keys(latticeAlgorithms(Lattice.powerset(1)))];
-const typesOfF = ['monotone', 'meet of join-endomorphisms', 'arbitrary'];
 return ({})=>{
   const setModal = preact.useContext(modalContext);
   const [lattice, setLattice] = preact.useState(Lattice.powerset(3));
   const [loading, setLoading] = preact.useState(false);
-  // const allAlgorithms = preact.useCallback((/** @type {Lattice} */ L)=>{
-  //   return Object.entries(algorithms(L)).map(([name,algorithm],i)=>({
-  //     name, algorithm,
-  //   }));;
-  // }, []);
 
   const [selected, setSelected] = preact.useState(Object.fromEntries(algoNames.map(name=>[name, true])));
 
   const [ntc, setNTC] = preact.useState(200);
-  const tests = preact.useCallback(function*(lattice, algos, ntc, typeOfF){
-    //console.log(L);
-    const hash=(/** @type {number[]} */ seq)=>{
-      const base=257, bigPrime=7778777;
-      let h=0, pow=1;
-      for(let x of seq){
-        h = (base*h + x) % bigPrime;
-        pow = (base*pow) % bigPrime;
-      }
-      return h;
-    }
-    const fails = {};
-    const failExample = {};
-    const outputs = {};
-
-    const seenInputs = new Set();
-    const seenOutputs = new Set();
-    for(let tc=0;tc<ntc;tc++){
-      let h = (()=>{switch(typeOfF){
-        case 'arbitrary': return lattice.randomArbitraryF()
-        case 'monotone': return lattice.randomMonotoneF()
-        case 'meet of join-endomorphisms':
-          const f = lattice.randomJoinF();
-          const g = lattice.randomJoinF();
-          const {n, glb} = lattice;
-          return range(n).map(x=>glb[f[x]][g[x]]);
-        default: throw `type ${typeOfF} not in ${typesOfF}`;
-      }})();
-      seenInputs.add(hash(h));
-      for(let e of algos){
-        const start = Date.now();
-        const {h:out, cnt} = e.algorithm(h);
-        const elapsed = (Date.now()-start);
-        outputs[e.name] = out;
-        e.counts += cnt;
-        e.mSeconds += elapsed;
-        e.maxCounts = Math.max(e.maxCounts, cnt);
-      }
-      let h0 = outputs[algos[0].name];
-      seenOutputs.add(hash(h0));
-      for(let e of algos){
-        const out = outputs[e.name];
-        let ok = true;
-        for(let x=0;x<lattice.n;x++) ok = ok && (h0[x]==out[x]);
-        e.fails += !ok;
-        if(!ok && !e.failExample) e.failExample = {input:h, output:out, expectedOutput: h0};
-      }
-      yield {outputs, fails, failExample, different: {inputs:seenInputs.size, outputs:seenOutputs.size}};
-    }
-  }, []);
+  
   const showFailExample = preact.useCallback((lattice, {input, output, expectedOutput})=>{
     setModal(caph.parse`
       Input: ${JSON.stringify(input)}
@@ -129,9 +188,10 @@ return ({})=>{
   },[]);
 
   const [out, setOut] = preact.useState(caph.parse``);
+  const [seed, setSeed] = preact.useState(0);
   const [running, setRunning] = preact.useState(false);
   const [showAlgorithms, setShowAlgorithms] = preact.useState(false);
-  const [typeOfF, setTypeOfF] = preact.useState('monotone');
+  const [typeOfF, setTypeOfF] = preact.useState('join of monotone and join-endomorphism');
   const testsParent = preact.useCallback(async (lattice, ntc, typeOfF, selected)=>{
     setRunning(true);
     emergency.stop = false;
@@ -140,19 +200,12 @@ return ({})=>{
     const startMs = Date.now();
     const nextIntervalMs = 100;
     let nextOut = startMs + nextIntervalMs;
-    let tc=0;
-    const _algos = latticeAlgorithms(lattice);
-    const algos = algoNames.filter(name=>selected[name]).map(name=>({
-      name, algorithm:_algos[name],
-      mSeconds:0, fails:0, failExample:null,
-      counts:0, maxCounts:0, 
-    }));
-
-    const report = ({different})=> setOut(caph.parse`
+    const algos = latticeAlgorithmsWithCounters(lattice).filter(({name})=>selected[name]);
+    const report = ({different, progress})=> setOut(caph.parse`
     <div>
     <div (component)="@code">
     Seconds:  ${((Date.now()-startMs)/1000).toFixed(0)}<br>
-    Progress: ${tc}/${ntc}, of which, ${different.inputs}/${tc} different inputs, ${different.outputs}/${tc} different outputs<br>
+    Progress: ${progress}/${ntc}, of which, ${different.inputs}/${progress} different inputs, ${different.outputs}/${progress} different outputs<br>
     </>
     <table class="test-results">
     <thead>
@@ -161,10 +214,10 @@ return ({})=>{
     ${algos.map((e)=>caph.parse`
       <tr>
       <td>${e.name}
-      <td>${''+e.mSeconds} ms
-      <td>${''+(e.counts/tc).toFixed(2)}
-      <td>${e.maxCounts}
-      <td>${''+e.counts}
+      <td>${(1000*e.timeSum).toFixed(0)} ms
+      <td>${''+(e.cntSum/progress).toFixed(2)}
+      <td>${e.cntMax}
+      <td>${''+e.cntSum}
       <td>${e.fails==0?''+e.fails:caph.parse`
         <button onClick=${()=>showFailExample(lattice, /** @type {*}*/(e.failExample))}>${''+e.fails}</>
       `}
@@ -173,18 +226,17 @@ return ({})=>{
     `)}
     </tbody>
     </table>
-    Lattice size: $n=${lattice.n}$ nodes and $m=${lattice.m}$ edges ($n^2 = ${lattice.n*lattice.n}$).
+    Lattice size: $n=${lattice.n}$ nodes and $m=${lattice.m}$ edges ($n^2 = ${lattice.n*lattice.n}$). $${(lattice.n*(lattice.n-1))/2}$ different pairs.
     </>
     `);
     try{
     for(let result of tests(lattice, algos, ntc, typeOfF)){
-      ++tc;
-      if(Date.now()>nextOut||tc==ntc){
+      if(Date.now()>nextOut||result.progress==ntc){
         nextOut+=nextIntervalMs;
         report(result);
         await caph.sleep(100/ntc);
       }
-      if(emergency.stop||tc==ntc){
+      if(emergency.stop||result.progress==ntc){
         let {failExample} = result;
         for(let k in failExample) if(failExample[k]) console.log('Fail Example', k, failExample[k])
         break;
@@ -215,14 +267,16 @@ return ({})=>{
         <button disabled=${running} onClick=${async ()=>{
           setLoading(true);
           await caph.sleep(250);
-          setLattice(Lattice.preset(k)); // takes time
+          setLattice(Lattice.preset(k, seed)); // takes time
           setLoading(false);
         }}>preset-${k}</button>
       `)}
       <br>
       Number of elements: ${lattice.n}
       <br>
-      Lattice: (scroll to zoom in or out)
+      Seed for presets: seed(${seed.toFixed(0)}). ${[0,1,2,42].map(k=>caph.parse`
+        <button disabled=${running} onClick=${()=>setSeed(k)}>${`seed(${k})`}</button>
+      `)}
       <br>
       <br>
       <${caph.plugin('vizLattice')} lattice=${loading?null:lattice}/>
@@ -254,25 +308,299 @@ return ({})=>{
   `
 }})();
 
-caph.injectStyle(`
-#graph {
-  text-align: center;
-  background-color: white; overflow-x:clip;
-  box-shadow: 0px 0px 10px 0px black;
-  margin: 5px;
+
+
+
+
+
+
+
+
+
+
+
+
+
+caph.pluginDefs['paperExperiments'] = (()=>{
+
+const global = {
+  xAxis: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+  running: false,
+  nLattices: 10,
+  nFunctions: 1000,
+  timeLimit: 1e-3,
+  // experiments: localStorage.getItem('paperExperiments')||[],
+  changed: false,
+  plotData: {},
+  uiSetters: {},
+};
+global.plotData = [];
+
+// Object.fromEntries(algoNames.map(name => [name, {
+//   x: global.xAxis,
+//   y: global.xAxis.map(()=>/**@type {number|null}*/(null)),
+// }]));
+
+const loop = async ()=>{
+  const rngMain = RNG(0);
+  const timedOut = new Set();
+  for(let n of global.xAxis){
+    const rngLSeed = RNG(rngMain());
+    for(let lSeed of range(global.nLattices).map(()=>rngLSeed())){
+      await caph.sleep(0); // Let the browser resolve other async actions
+      const L = Lattice.preset(n, lSeed); // To do: Use seed!
+      const typeOfF = 'join of monotone and join-endomorphism';
+      const algos = latticeAlgorithmsWithCounters(L).filter(({name})=>!timedOut.has(name));
+      for(let r of tests(L, algos, global.nFunctions, typeOfF)){
+        if(!global.running) return;
+      }
+      for(let {name, timeAvg} of algos){
+        global.plotData.push({name, n, lSeed, timeAvg});
+        if(timeAvg>1.2*global.timeLimit) timedOut.add(name);
+      }
+      global.changed = true;
+    }
+  }
+  global.uiSetters.setRunning(global.running=false);
 }
-`)
-caph.pluginDefs['viz'] = ({vizCode})=>{
-  const [html, setHtml] = preact.useState(caph.parse``);
-  preact.useEffect(async ()=>{
-    if(!vizCode){ setHtml(null); return;}
-    setHtml(caph.parse`<div id="graph" />`);
-    await caph.until(()=>document.querySelector('#graph'));
-    d3.select("#graph").graphviz().renderDot(vizCode);
-  },[vizCode]);
-  return html;
+(async ()=>{
+  while(true){
+    while(!global.running) await caph.sleep(50);
+    await loop();
+    console.log('SAVE');
+  }
+})();
+
+
+const d3ObjPromise = async ()=>{
+  const margin = {top: 10, right: 200, bottom: 50, left: 60},
+  width = 600 - margin.left - margin.right,
+  height = 300 - margin.top - margin.bottom;
+  
+  await caph.until(()=>document.querySelector('#my_dataviz'));
+  await caph.sleep(500); // :/
+  // append the svg object to the body of the page
+  const svg = d3.select("#my_dataviz")
+  .append("svg")
+  .attr("width", width + margin.left + margin.right)
+  .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // Add X axis --> it is a date format
+  const x = d3.scaleLog()
+  .domain([1, d3.max(global.xAxis)])
+  .range([ 0, width ]);
+  svg.append("g")
+  .attr("transform", `translate(0, ${height})`)
+  .call(d3.axisBottom(x).ticks(5));
+
+  // Add Y axis
+  const y = d3.scaleLog()
+    .domain([1e-6, global.timeLimit])
+    .range([ height, 0 ]);
+  svg.append("g")
+    .call(d3.axisLeft(y));
+  
+  const color = d3.scaleOrdinal()
+    .range(['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'])
+
+  svg.append("text")
+    .attr("class", "x label")
+    .attr("fill", 'black')
+    .attr("text-anchor", "middle")
+    .attr("x", width*0.5)
+    .attr("y", height+35)
+    .text("Lattice size");
+  
+  svg.append("text")
+    .attr("class", "y label")
+    .attr("fill", 'black')
+    .attr("text-anchor", "middle")
+    .attr("y", -42)
+    .attr("dx", -height*0.5)
+    .attr("transform", "rotate(-90)")
+    .text("WC runtime [seconds]");
+  
+  const linesContainer = svg.append("g");
+
+  // Legend creation
+  // create a list of keys
+  let keys = algoNames;
+  // Add one dot in the legend for each name.
+  const x0 = width+20, y0=height*0.1;
+  svg.selectAll("myDots")
+    .data(keys)
+    .enter()
+    .append("circle")
+      .attr("cx", x0)
+      .attr("cy", (d,i)=> y0 + i*25)
+      .attr("r", 7)
+      .style("fill", (d)=> color(d))
+
+  // Add one dot in the legend for each name.
+  svg.selectAll("myLabels")
+    .data(keys)
+    .enter()
+    .append("text")
+      .attr("x", x0+20)
+      .attr("y", (d,i)=> y0 + i*25 + 6)
+      .style("fill", (d)=> color(d))
+      .text((d)=> d)
+      .attr("text-anchor", "left")
+      .style("alignment-baseline", "middle")
+
+  const refs = [];
+  for(let power of [1, 2, 3])
+    for(let x of global.xAxis)
+      refs.push({power, x, y: 1e-6*Math.pow(x, power)})
+  svg.selectAll("referenceCurves")
+    .data(d3.group(refs, d=>d.power))
+    .join("path")
+      .style("stroke-dasharray", "5,5")
+      .attr("stroke", 'black')
+      .attr("stroke-width", 0.5)
+      .attr("d", d=>(d3.line()
+        .x(({x:xx})=>x(xx))
+        .y(({y:yy})=>y(yy))
+        (d[1])
+      ))
+    
+  return {svg, x, y, color, linesContainer};
 }
 
+const groupedData = ()=>{
+  let data = d3.flatRollup(global.plotData,
+    (values)=>({
+      timeAvg: Math.max(1e-6, d3.mean(values, d=>d.timeAvg)),
+      timeMax: Math.max(1e-6, d3.max(values, d=>d.timeAvg)),
+    }),
+    d => d.name, d => d.n,
+  );
+  data = Array.from(data, ([name, n, props]) => ({name, n, ...props}));
+  return data;
+}
+
+const rePlot = ({svg, x, y, color, linesContainer})=>{
+  const data = groupedData();
+
+  linesContainer.selectAll("path").remove();
+  linesContainer.selectAll("circle").remove();
+
+  linesContainer.selectAll("myLines")
+    .data(d3.group(data, d => d.name))
+    .join("path")
+      .attr("fill", "none")
+      .attr("stroke", (d)=>color(d[0]))
+      .attr("stroke-width", 1.5)
+      .attr("d", d=>(d3.line()
+        .x(({n})=>x(n))
+        .y(({timeMax})=>y(timeMax))
+        (d[1])
+      ))
+  linesContainer.selectAll("myDots")
+    .data(data)
+    .join("circle")
+      .attr("fill", ({name})=>color(name))
+      .attr("r", 2)
+      .attr("cx", ({n})=>x(n))
+      .attr("cy", ({timeMax})=>y(timeMax))
+  return;
+}
+
+(async ()=>{
+  const d3Obj = await d3ObjPromise();
+  global.changed = true;
+  while(true){
+    while(!global.changed) await caph.sleep(500);
+    global.changed = false;
+    global.uiSetters.setData([...groupedData()]);
+    await rePlot(d3Obj);
+  }
+})();
+return ({})=>{
+  const [xAxis, setXAxis] = preact.useState(global.xAxis);
+  const [nLattices, setNLattices] = preact.useState(global.nLattices);
+  const [nFunctions, setNFunctions] = preact.useState(global.nFunctions);
+  const [timeLimit, setTimeLimit] = preact.useState(global.timeLimit);
+  const [running, setRunning] = preact.useState(global.running);
+  const [data, setData] = preact.useState([]);
+  preact.useEffect(()=>{
+    global.uiSetters.setRunning=setRunning;
+    global.uiSetters.setData=setData;
+  }, []);
+  preact.useEffect(()=>{global.xAxis=xAxis;}, [xAxis]);
+  preact.useEffect(()=>{global.running=running;}, [running]);
+  preact.useEffect(()=>{global.nLattices=nLattices;}, [nLattices]);
+  preact.useEffect(()=>{global.nFunctions=nFunctions;}, [nFunctions]);
+  preact.useEffect(()=>{global.timeLimit=timeLimit;}, [timeLimit]);
+
+  
+  return caph.parse`
+  <div (component)="@tabs" labels=${['Experiments']}>
+    <div>
+      Lattice sizes: ${JSON.stringify(xAxis)}<br>
+      Lattices per size: ${nLattices} (whenever possible)<br>
+      Test functions per lattice: ${nFunctions}<br>
+      Time limit: ${(timeLimit*1e6).toFixed(0)} $\mu$s<br>
+      <button disabled=${running} onClick=${()=>setRunning(true)}>Run</button>
+      <button disabled=${!running} onClick=${()=>setRunning(false)}>Stop</button>
+      ${preact.useMemo(()=>caph.parse`<div id="my_dataviz" />`, [])}
+      <table class="table">
+        <thead>
+        <th>$n$</th>
+        ${algoNames.map(name=>caph.parse`<td>${name}</td>`)}
+        </thead>
+        <tbody>
+        ${d3.flatGroup(data, ({n})=>n).map(([n, arr])=>
+          caph.parse`<tr><td>${n}</>${algoNames.map(thisName=>
+            caph.parse`<td>${
+              arr.filter(({name})=>thisName==name)
+              .map(({timeMax})=>caph.parse`${(timeMax*1e6).toFixed(0)} $\mu$s`)[0]||'TL'}</td>`
+          )}</tr>`
+        )}
+        </tbody>
+      </table>
+      </>
+    </>
+  </>
+  `
+}})();
+caph.injectStyle(`
+table.table{ text-align: center; border-collapse: collapse; margin:auto; }
+.table td, .table th{ padding: 0.3vh 0.5vw; border: solid 1px;  }
+`)
+
+
+
+
+
+
+
+
+
+
+// class Distraction {
+//   constructor(){
+//     class Div{
+//       constructor(...children){}
+//       set(key, value) {return this;}
+//     }
+//     class Button extends Div{
+//       onClick(fn) {}
+//     }
+//     this.obj =  (new Div()).set('mode', 'something');
+//     new Button().onClick(()=>)
+//     `
+//     <${caph.plugin('@codemirror')} mode="text/javascript" theme="monokai"
+//       onId=${(id)=>caph.injectStyle(`#${id} .CodeMirror{height: 100%;}
+//       `)}
+//     >
+//       ${latticeAlgorithms.toString()}
+//     </>
+//   `
+//   }
+// }
 
 
 caph.injectStyle(`

@@ -36,12 +36,21 @@ const RNG=(/** @type {number | null} */ seed=null, maxValue=(1<<31))=>{
   const base=257, bigPrime=7778777;
   let curr = seed!=null?seed:Math.floor(Math.random()*bigPrime);
   function next(){
-    curr = (curr*base+1)%bigPrime;
+    curr = Math.floor(curr*base+1)%bigPrime;
     return curr%maxValue;
   }
+  if(seed==null) next(), next();
   return next;
 }
-
+const hashRolling=(/** @type {number[]} */ seq)=>{
+  const base=257, bigPrime=7778777;
+  let h=0, pow=1;
+  for(let x of seq){
+    h = (base*h + x) % bigPrime;
+    pow = (base*pow) % bigPrime;
+  }
+  return h;
+}
 
 
 // spell-checker: words powerset inbetween
@@ -70,6 +79,33 @@ const utilsChildren = (()=>{
     );
   }
 
+  /** @param {number[][]} children1 @param {number[][]} children2 */
+  function multiplyChildren(children1, children2){
+    const n1 = children1.length;
+    const n2 = children2.length;
+    const /** @type {number[][]} */children = range(n1*n2).map(()=>[]);
+    for(let i=0; i<n1; i++) for(let j=0;j<n2;j++){
+      for(let k of children1[i]) children[i + j * n1].push(k + j * n1)
+      for(let k of children2[j]) children[i + j * n1].push(i + k * n1)
+    }
+    return children;
+  }
+
+  /** @param {number[][]} children1 @param {number[][]} children2 */
+  function addChildren(children1, children2){
+    const n1 = children1.length;
+    const n2 = children2.length;
+    const /** @type {number[][]} */children = range(n1+n2).map(()=>[]);
+    for(let i=0; i<n1; i++) for(let k of children1[i]) children[i].push(k);
+    for(let j=0; j<n2; j++) for(let k of children2[j]) children[j+n1].push(k+n1);
+    const bottoms2 = range(n2).filter(j=>!children2[j].length);
+    const nonTops1 = new Set();
+    for(let i=0; i<n1; i++) for(let k of children1[i]) nonTops1.add(k);
+    const tops1 = range(n1).filter(i=>!nonTops1.has(i));
+    for(let i of tops1) for(let j of bottoms2) children[j+n1].push(i)
+    return children;
+  }
+
   /** @param {number[][]} children @param {number?} start */
   function randomEdge(children, start=null){
     const n = children.length;
@@ -93,23 +129,32 @@ const utilsChildren = (()=>{
     return out;
   }
 
-  /** @param {number} k */
-  function presets(k){ // k is the seed and the max size at the same time
+  /** @param {number} k @param {number} seed*/
+  function presets(k, seed=0){ // k is the lattice size at the same time
+    if(k<=1) return k==1?[[]]:[];
     k = Math.max(2, k);
     let children = powerset(1);
-    let mod = 2;
-    const next = RNG(k);
-    while(children.length<k){
-      if(next()%mod==0){
-        if(children.length*2 > k) continue;
-        children = twiceChildren(children);
-        mod *= 2;
+    let modMul=3, modAdd=5, modBet=2, n;
+    const next = RNG(RNG(k)()+seed);
+    while((n=children.length)<k){
+      if(next()%modMul==0){
+        let a = 2;
+        while(n*a < k && next()%modMul==0) a+=1;
+        if(n*a > k) continue;
+        children = multiplyChildren(children, presets(a, next()));
+        modMul++;
+      } else if(next()%modAdd==0){
+        let m = Math.floor(n*((next()%80)+10)/100);
+        if(n+m > k) continue;
+        children = addChildren(children, presets(m, next()));
+        modAdd *= 2;
       } else{
         const [a,b] = randomEdge(children, next());
         let nNodes = 1;
-        while(next()%4==0) nNodes += 1;
-        if(children.length+nNodes > k) continue;
+        while(next()%modBet==0) nNodes += 1;
+        if(n+nNodes > k) continue;
         children = addNodesBetween(children, [a,b], nNodes);
+        modBet++;
       }
     }
     return children;
@@ -250,20 +295,54 @@ class Lattice{
     const geq = falseMat();
     const gt = falseMat();
     const lt = falseMat();
+
+    const nBelow = range(n).map(()=>0);
+    const nAbove = range(n).map(()=>0);
     for(let a=0;a<n;a++) for(let b=0;b<n;b++){
       geq[a][b] = leq[b][a];
       gt[a][b] = geq[a][b] && a!=b;
       lt[a][b] = leq[a][b] && a!=b;
+      if(leq[a][b]) nBelow[b]++, nAbove[a]++;
     }
+
+    const inversePerm = (/** @type {number[]} */ arr)=>{
+      const out = [...arr];
+      for(let i=0;i<out.length;i++) out[arr[i]] = i;
+      return out;
+    }
+    const topoDownUp = range(n).sort((a,b)=>nBelow[a]-nBelow[b]);
+    const topoUpDown = range(n).sort((a,b)=>nAbove[a]-nAbove[b]);
+    const invDownUp = inversePerm(topoDownUp);
+    const invUpDown = inversePerm(topoUpDown);
+
+    // for(let ia=0;ia<n;ia++) for(let ib=ia;ib<n;ib++){
+    //   caph.assert(!lt[topoDownUp[ib]][topoDownUp[ia]]);
+    //   caph.assert(!gt[topoUpDown[ib]][topoUpDown[ia]]);
+    // }
+
     const glb = zeroMat();
     const lub = zeroMat();
     for(let a=0;a<n;a++) for(let b=a;b<n;b++){
-      glb[a][b] = glb[b][a] = range(n).filter((x)=>
-        leq[x][a] && leq[x][b]
-      ).reduce((x,y)=> leq[x][y]?y:x);
-      lub[a][b] = lub[b][a] = range(n).filter((x)=>
-        geq[x][a] && geq[x][b]
-      ).reduce((x,y)=> geq[x][y]?y:x);
+      // glb[a][b] = glb[b][a] = range(n).filter((x)=>
+      //   leq[x][a] && leq[x][b]
+      // ).reduce((x,y)=> leq[x][y]?y:x);
+      // lub[a][b] = lub[b][a] = range(n).filter((x)=>
+      //   geq[x][a] && geq[x][b]
+      // ).reduce((x,y)=> geq[x][y]?y:x);
+      for(let i=Math.max(invDownUp[a], invDownUp[b]); i<n; i++){
+        const x = topoDownUp[i];
+        if(leq[a][x] && leq[b][x]){
+          lub[a][b] = lub[b][a] = x;
+          break;
+        }
+      }
+      for(let i=Math.max(invUpDown[a], invUpDown[b]); i<n; i++){
+        const x = topoUpDown[i];
+        if(leq[x][a] && leq[x][b]){
+          glb[a][b] = glb[b][a] = x;
+          break;
+        }
+      }
     }
     let children = /** @type {number[][]}*/(_children);
     if(!_children){
@@ -291,8 +370,8 @@ class Lattice{
       for(let x=0;x<n;x++) if(!seen[x]) dfs(x);
       return topo;
     }
-    const topoDownUp = topoDfs(children);
-    const topoUpDown = topoDfs(parents);
+    // const topoDownUp = topoDfs(children);
+    // const topoUpDown = topoDfs(parents);
 
     this.walkDown = function* (/** @type {number?} */start=null){
       if(start===null) start = top;
@@ -323,8 +402,6 @@ class Lattice{
     /** @type {number[]}*/this.topoUpDown = topoUpDown;
     /** @type {[number,number][]}*/this.uncomparables = uncomparables;
 
-    const {GMeetNaiveLoop} = latticeAlgorithms(this);
-    this.GMeet = GMeetNaiveLoop;
   }
 
 
@@ -340,9 +417,9 @@ class Lattice{
     const children = utilsChildren.powerset(log2n);
     return this.fromChildren(children);
   }
-  /** @param {number} k */
-  static preset(k){
-    const children = utilsChildren.presets(k);
+  /** @param {number} k @param {number} seed */
+  static preset(k, seed=0){
+    const children = utilsChildren.presets(k, seed);
     return this.fromChildren(children);
   }
   /**@param {number[][]} children */
@@ -371,9 +448,12 @@ class Lattice{
     return f;
   }
   randomJoinF(){
+    const {n, children, bottom} = this;
     const f = this.randomMonotoneF();
-    const {h} = this.GMeet(f)
-    return h;
+    for(let x=0; x<n; x++) if(children[x].length>1) f[x] = bottom;
+    monoMinAbove(this, f);
+    joinMaxBelow(this, f);
+    return f;
   }
 
   powersetRandomSpaceF(){
@@ -481,7 +561,78 @@ var latticeAlgorithms = (L)=>{
     children, parents, top, bottom, topoUpDown, uncomparables,
   } = L;
 
-  // Common functions:
+
+  /** @param {number[]} h */
+  const  GMeetStar = (h)=>{
+    // Find conflicts, fixing them immediately
+    let cnt = 0;
+    while(true){
+      let changed = false;
+      let ab, hab;
+      cnt += n * (n-1); // total LUBs for ab and hab
+      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
+        if(h[ab=lub[a][b]] != (hab=lub[h[a]][h[b]])){
+          changed = true, cnt++;
+          if(gt[ h[ab] ][ hab ]) h[ab] = hab;
+          else {
+            h[a] = glb[h[a]][h[ab]];
+            h[b] = glb[h[b]][h[ab]];
+            cnt += 2;
+          }
+        }
+      }
+      if(!changed) break;
+    }
+    return {h, cnt};
+  }
+
+  /** @param {number[]} h */
+  const GMeetMonoStar = (h)=>{
+    let cnt = 0;
+    cnt = m;
+    monoMaxBelow(L, h);
+    let changed = true;
+    while(changed){
+      changed = false;
+      let ab, hab;
+      cnt += n * (n-1); // total LUBs for ab and hab
+      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
+        if(h[ab=lub[a][b]] != (hab=lub[h[a]][h[b]])){
+          changed = true;
+          cnt += n;
+          for(let x=0;x<n;x++) if(leq[x][ab]){
+            h[x] = glb[h[x]][hab], cnt+=1;
+          }
+        }
+      }
+    }
+    return {h, cnt};
+  }
+
+
+  /** @param {number[]} h */
+  const GMeetMonoLazy = (h)=>{
+    let cnt = 0;
+    cnt += m;
+    monoMaxBelow(L, h);
+    let changed = true;
+    while(changed){
+      changed = false;
+      let ab, hab;
+      cnt += n * (n-1); // total LUBs for ab and hab
+      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
+        if(h[ab=lub[a][b]] != (hab=lub[h[a]][h[b]])){
+          cnt ++, changed=true;
+          h[ab] = glb[h[ab]][hab];
+        }
+      }
+      if(changed) cnt+=m, monoMaxBelow(L, h);
+    }
+    return {h, cnt};
+  }
+
+
+  // Functions for handling tuples in GMeetPlus:
 
   // Representation of tuples (i,j) in [0,..n) as numbers in [0,..n^2).
   // Order does not matter, i.e. (i,j)=(j,i).
@@ -497,148 +648,10 @@ var latticeAlgorithms = (L)=>{
     throw new Error('Empty set');
   }
 
-
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const  GMeetNaiveSlowest = (f, g=null)=>{
-    // Find one conflict, fix it and repeat.
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    const findOneConflict = ()=>{
-      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
-        cnt+=2;
-        if(h[lub[a][b]] != lub[h[a]][h[b]]) return [a,b];
-      }
-      return [-1,-1];
-    }
-    while(true){
-      const [a,b] = findOneConflict();
-      if(a==-1) break;
-      cnt += 3;
-      const ab = lub[a][b];
-      const c = lub[h[a]][h[b]];
-      if(gt[ h[ab] ][ c ]) h[ab] = c;
-      else {
-        h[a] = glb[h[a]][h[ab]];
-        h[b] = glb[h[b]][h[ab]];
-        cnt+=2;
-      }
-    }
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const  GMeetNaiveSlow = (f, g=null)=>{
-    // Find many conflicts, fix them and repeat.
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    const findAllConflicts = ()=>{
-      let conflicts = [];
-      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
-        cnt += 2;
-        if(h[lub[a][b]] == lub[h[a]][h[b]]) continue;
-        conflicts.push(pack2(a,b));
-      }
-      return conflicts
-    }
-    while(true){
-      const conflicts = findAllConflicts();
-      if(!conflicts.length) break;
-      for(let [a,b] of conflicts.map(unpack2)){
-        cnt += 2;
-        const ab = lub[a][b];
-        const c = lub[h[a]][h[b]];
-        if(h[ab] == c) continue;
-        cnt++;
-        if(gt[ h[ab] ][ c ]) h[ab] = c;
-        else {
-          h[a] = glb[h[a]][h[ab]];
-          h[b] = glb[h[b]][h[ab]];
-          cnt+=2;
-        }
-      }
-    }
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const  GMeetNaiveLoop = (f, g=null)=>{
-    // Find conflicts, fixing them immediately
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
-        cnt += 2;
-        const ab = lub[a][b];
-        const c = lub[h[a]][h[b]];
-        if(h[ab] == c) continue;
-        changed = true;
-        cnt++;
-        if(gt[ h[ab] ][ c ]) h[ab] = c;
-        else {
-          h[a] = glb[h[a]][h[ab]];
-          h[b] = glb[h[b]][h[ab]];
-          cnt += 2;
-        }
-      }
-    }
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetMonoNaive = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    cnt = m;
-    monoMaxBelow(L, h);
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let [a,b] of uncomparables){
-        cnt += 2;
-        const ab = lub[a][b];
-        const c = lub[h[a]][h[b]];
-        if(h[ab] == c) continue;
-        changed = true;
-        cnt+=n;
-        for(let x=0;x<n;x++) if(leq[x][ab]){
-          h[x] = glb[h[x]][c], cnt+=1;
-        }
-      }
-    }
-    return {h, cnt};
-  }
-
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetMonoLate = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    cnt += m;
-    monoMaxBelow(L, h);
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let [a,b] of uncomparables){
-        cnt += 3;
-        const ab = lub[a][b];
-        const c = lub[h[a]][h[b]];
-        if(geq[c][h[ab]]) continue;
-        cnt += 1;
-        h[ab] = glb[h[ab]][c], changed=true;
-      }
-      if(changed) cnt+=m, monoMaxBelow(L, h);
-    }
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetPlus = (f, g=null)=>{
+  /** @param {number[]} h */
+  const GMeetPlus = (h)=>{
     /*Based on the implementation in Santiago's repository. delta.py, line 557.*/
     let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
     cnt += m;
     monoMaxBelow(L, h);
     // (sup, con, fail) as in the paper. Actually, con and fail are global sets (not array of sets like sup).
@@ -707,427 +720,37 @@ var latticeAlgorithms = (L)=>{
     return {h, cnt};
   }
 
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetConfirm = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    cnt += m;
-    monoMaxBelow(L, h);
-    cnt += uncomparables.length;
-    const set = new Set(uncomparables.map(([a,b])=>pack2(a,b)));
-    cnt += n;
-    const confirmed = new Set(range(n).filter(x=>h[x]==h[bottom]));
-    const joinIrr = range(n).filter(x=>children[x].length==1).map(x=>[children[x][0], x]);
-    //shuffle(notCmp);
-    let outer = 0;
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let [a,b] of [...set].map(unpack2)){
-        cnt += 1;
-        const ab = lub[a][b];
-        if(confirmed.has(ab)) set.delete(pack2(a,b));
-        const c = lub[h[a]][h[b]];
-        if(h[ab] == c) continue;
-        changed = true;
-        if(gt[ h[ab] ][ c ]) h[ab] = c;
-        else{
-          h[a] = glb[h[a]][h[ab]];
-          h[b] = glb[h[b]][h[ab]];
-        }
-        let conf = confirmed.has(a) && confirmed.has(b);
-        conf ||= confirmed.has(a) && h[a]==h[ab];
-        conf ||= confirmed.has(b) && h[b]==h[ab];
-        if(conf) confirmed.add(ab), set.delete(pack2(a,b));
-      }
-      // confirm joinIrr
-      for(let [a,b] of joinIrr){
-        cnt += 1;
-        if(confirmed.has(a) && h[b]==h[a]) confirmed.add(b);
-      }
-      //if(++outer>=3) console.log(outer);
+  
+  /** @type {[number,number][][]} */
+  const pairsWhoseLubIs = range(n).map(()=>[]);
+  for(let a=0; a<n; a++) for(let b=a; b<n; b++){
+    pairsWhoseLubIs[lub[a][b]].push([a,b]);
+  }
+  const arrayGlb = (/**@type {number[]}*/arr)=> arr.reduce((cum, value)=> glb[cum][value], top);
+  const arrayEq = (/**@type {number[]}*/a, /**@type {number[]}*/b)=>{
+    if(a.length!=b.length) return false;
+    for(let i=0; i<a.length; i++) if(a[i]!=b[i]) return false;
+    return true;
+  }
+  /** @param {number[]} h */
+  const DMeetPlus = (h)=>{
+    for(let x=0; x<n; x++) if(children[x].length>1) h[x] = h[bottom];
+    // Computes the minimal monotone above h in-place.
+    for(let x of L.topoDownUp){
+      if(children[x].length>=2){
+        h[x] = lub[h[children[x][0]]][h[children[x][1]]]
+      } else if(children[x].length==1) h[x] = lub[h[x]][h[children[x][0]]];
     }
-    return {h, cnt};
+    return {h, cnt:n+m};
   }
 
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetConfirmMono = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    cnt += m;
-    monoMaxBelow(L, h);
-    cnt+=n;
-    const joinIrr = range(n).filter(x=>children[x].length==1).map(x=>[children[x][0], x]);
-    const confirmed = new Set(range(n).filter(x=>h[x]==h[bottom]));
-    const pending = [...confirmed]; // to propagate
-    while(pending.length){
-      while(pending.length){
-        const a = /**@type {number}*/(pending.pop());
-        for(let b of confirmed){
-          cnt += 1;
-          let ab = lub[a][b];
-          if(confirmed.has(ab)) continue;
-          h[ab] = lub[h[a]][h[b]];
-          confirmed.add(ab);
-          pending.push(ab);
-        }
-      }
-      cnt += n+m;
-      monoMaxBelow(L, h);
-      cnt += n+m;
-      for(let x=0;x<n;x++) if(!confirmed.has(x)){
-        for(let y of children[x]) if(h[x]==h[y]&&confirmed.has(y)){
-          confirmed.add(x);
-          pending.push(x);
-        }
-      }
-      // confirm joinIrr
-      for(let [a,b] of joinIrr) if(!confirmed.has(b)){
-        cnt += 1;
-        if(confirmed.has(a) && h[b]==h[a]){
-          confirmed.add(b); pending.push(b);
-        }
-      }
-    }
-    // let {h:h2, cnt:cnt2} =  GMeetNaiveLoop(h)
-    // cnt+=cnt2;
-    return {h, cnt };
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const DMeetIrr = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    for(let x of range(n)) if(x!=bottom && children[x].length!=1) h[x] = bottom;
-    monoMinAbove(L, h);
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetMonoLateIrr = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-
-    const irrUncomparables = [];
-    for(let a=0;a<n;a++) if(children[a].length==1) for(let b=a+1;b<n;b++) if(children[b].length==1) if(!leq[a][b] && !leq[b][a]) irrUncomparables.push([a,b]);
-
-    cnt += m;
-    monoMaxBelow(L, h);
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let [a,b] of irrUncomparables){
-        cnt += 3;
-        const ab = lub[a][b];
-        const c = lub[h[a]][h[b]];
-        if(geq[c][h[ab]]) continue;
-        cnt += 1;
-        h[ab] = glb[h[ab]][c], changed=true;
-      }
-      if(changed) cnt+=m, monoMaxBelow(L, h);
-    }
-    for(let x of range(n)) if(x!=bottom && children[x].length!=1) h[x] = bottom;
-    monoMinAbove(L, h);
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetMonoLateIrr2 = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-
-    const irrUncomparables = [];
-    for(let a=0;a<n;a++) if(children[a].length==1) for(let b=a+1;b<n;b++) if(children[b].length==1) if(!leq[a][b] && !leq[b][a]) irrUncomparables.push([a,b]);
-
-    const irrFor = range(n).map(()=>/** @type {[number,number][]}*/([]));
-    for(let [a,b] of irrUncomparables){
-      irrFor[lub[a][b]].push([a,b]);
-    }
-    cnt += m;
-    monoMaxBelow(L, h);
-    let changed = true;
-    while(changed){
-      changed = false;
-      for(let x of range(n)){
-        if(!irrFor[x].length) continue;
-        let c = top;
-        for(let [a,b] of irrFor[x]) c = glb[c][lub[h[a]][h[b]]];
-        if(h[x]!=c){
-          h[x] = c;
-          for(let [a,b] of irrFor[x]){
-            h[a] = glb[h[a]][c];
-            h[b] = glb[h[b]][c];
-          }
-          changed = true;
-        }
-      }
-      if(changed) cnt+=m, monoMaxBelow(L, h);
-    }
-    for(let x of range(n)) if(x!=bottom && children[x].length!=1) h[x] = bottom;
-    monoMinAbove(L, h);
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetTest2 = (f, g=null)=>{
-    // const {h, cnt} = GMeetMonoNaive(f, g);
-    // for(let x of range(n)) if(x!=bottom && children[x].length!=1) h[x] = bottom;
-
-
-    const irrUncomparables = [];
-    for(let a=0;a<n;a++) if(children[a].length==1) for(let b=a+1;b<n;b++) if(children[b].length==1) if(!leq[a][b] && !leq[b][a]) irrUncomparables.push([a,b]);
-
-    const irrFor = range(n).map(()=>/** @type {[number,number][]}*/([]));
-    for(let [a,b] of irrUncomparables){
-      irrFor[lub[a][b]].push([a,b]);
-    }
-
-
-    const /** @type {number[][]} */ triplesN5 = [];
-    const/** @type {number[][]} */ triplesM3 = [];
-    for(let x of range(n)){
-      const aux = [...new Set(irrFor[x].reduce((prev, [a,b])=>(prev.push(a, b), prev), /** @type {number[]}*/([])))];
-      for(let [a,b] of irrFor[x]) for(let c of aux){
-        if(c==a || c==b) continue;
-        const both = [[a,b], [b,a]];
-        for(let [a,b] of both){
-          if(lub[a][c]==x && glb[a][c]==glb[a][b]){
-            if(leq[b][c]) triplesN5.push([a,b,c]);
-            if(lub[b][c]==x && glb[b][c]==glb[a][b]) triplesM3.push([a,b,c]);
-          }
-        }
-      }
-    }
-    const/** @type {number[][]} */ links = range(n).map(()=>[]);
-    for(let [a,b,c] of triplesN5){
-      links[c].push(a);
-    }
-    for(let [a,b,c] of triplesM3){
-      links[a].push(b); links[a].push(c);
-      links[b].push(a); links[b].push(c);
-      links[c].push(a); links[c].push(b);
-    }
-    for(let x of range(n)) links[x] = [x, ...new Set(links[x])];
-
-    let cnt = 0;
-    const h0 = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    const h = range(n).map(()=>bottom);
-    const irr = range(n).filter(x=>children[x].length==1);
-    cnt += 2*irr.length*irr.length;
-    for(let a of irr) for(let b of irr){
-      let ok = true;
-      for(let aa of links[a]) if(!leq[b][h0[aa]]) ok = false;
-      if(!ok) continue;
-      console.log(links[a], b)
-      for(let aa of links[a]) h[aa] = lub[h[aa]][b];
-    }
-    h[bottom] = h0[bottom];
-    monoMinAbove(L, h);
-
-    return {h, cnt};
-  }
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetTest = (f, g=null)=>{
-    // const {h, cnt} = GMeetMonoNaive(f, g);
-    // for(let x of range(n)) if(x!=bottom && children[x].length!=1) h[x] = bottom;
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    for(let x of L.topoUpDown){
-      for(let a=0;a<n;a++) for(let b=0;b<n;b++) if(lub[a][b]==x){
-        // const ab = lub[a][b];
-        // cnt+=4;
-        h[a] = glb[h[a]][h[x]];
-        h[b] = glb[h[b]][h[x]];
-        h[x] = glb[h[x]][lub[h[a]][h[b]]];
-      }
-    }
-    // const confirmed = new Set([bottom]);
-    // while(confirmed.size < n){
-    //   let more = []
-    //   for(let a of [...confirmed]) for(let b of [...confirmed]) if(!confirmed.has(lub[a][b])){
-    //     const ab = lub[a][b];
-    //     h[ab] = lub[h[a]][h[b]];
-    //     more.push(ab);
-    //   }
-    //   for(let b of more) confirmed.add(b);
-    //   more = [];
-    //   for(let a of [...confirmed]) for(let b of parents[a]) if(children[b].length==1 && !confirmed.has(b)){
-    //     //for(let x of [...confirmed]) if(leq[b][lub[a][x]]) console.warn(a,b,x);
-    //     for(let x of [...confirmed]) if(leq[b][lub[a][x]]) h[b] = glb[h[b]][lub[h[a]][h[x]]];
-    //     more.push(b);
-    //   }
-    //   for(let b of more) confirmed.add(b);
-    //   //console.log([...confirmed]);
-    // }
-    return {h, cnt};
-  }
-
-
-
-
-  // /** @param {number[]} f @param {number[]?} g*/
-  // const GMeetMono = (f, g=null)=>{
-  //   let cnt = 0;
-  //   const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-  //   cnt = m;
-  //   monoMaxBelow(L, h);
-  //   let pending = uncomparables.length;
-  //   for(let i=0; pending>0; pending--, i=(i+1)%uncomparables.length){
-  //     const [a, b] = uncomparables[i];
-  //     const ab = lub[a][b];
-  //     const c = lub[h[a]][h[b]];
-  //     if(h[ab]==c) continue;
-  //     pending = uncomparables.length;
-  //     for(let x=0;x<n;x++) if(leq[x][ab]){
-  //       h[x] = glb[h[x]][c], cnt+=1;
-  //     }
-  //   }
-  //   return {h, cnt};
-  // }
-
-
-
-  const triples = range(n).map(()=>/**@type {number[][]}*/([]));
-  for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
-    //cnt+=1;
-    const ab = lub[a][b];
-    if(ab==a || ab==b) continue;
-    const triple = [a,b,ab];
-    triples[a].push(triple);
-    triples[b].push(triple);
-    triples[ab].push(triple);
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetMonoDfs = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => g?(cnt++,glb[f[x]][g[x]]):f[x]);
-    cnt += m;
-    monoMaxBelow(L, h);
-
-    let seen = new Set();
-    /** @param {number} b @param {number} bound */
-    const dfs = (b, bound)=>{
-      cnt += 1;
-      seen.add(b);
-      const hb = glb[h[b]][bound];
-      if(h[b]==hb) return;
-      if(!inQueue[b]) inQueue[b] = true, queue.push(b);
-      h[b] = hb;
-      cnt += children[b].length;
-      for(let a of children[b]) if(!seen.has(a)) dfs(a, bound);
-    }
-
-    const queue = range(n);
-    const inQueue = range(n).map(()=>true);
-
-    while(queue.length){
-      const x = /**@type {number}*/(queue.pop());
-      inQueue[x] = false;
-      for(let [a,b,ab] of triples[x]){
-        cnt += 1;
-        const hab = lub[h[a]][h[b]];
-        if(h[ab] != hab) seen.clear(), dfs(ab, hab);
-      }
-    }
-    return {h, cnt};
-  }
-
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetEasy = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    // //cnt = m;
-    // let changed = true;
-    // while(changed){
-    //   changed = false;
-    //   for(let a=0;a<n;a++) for(let b=a+1;b<n;b++){
-    //     cnt += 1;
-    //     const ab = lub[a][b];
-    //     let hab = lub[h[a]][h[b]];
-    //     if(h[ab]==hab) continue;
-    //     cnt += 3;
-    //     h[ab] = glb[h[ab]][hab];
-    //     h[a] = glb[h[a]][h[ab]];
-    //     h[b] = glb[h[b]][h[ab]];
-    //     changed = true;
-    //   }
-    // }
-    let pending = (n*(n+1))>>1;
-    for(let a=0; pending; a=(a+1)%n) for(let b=(a+1)%n; pending; b=(b+1)%n){
-      pending--;
-      cnt += 1;
-      const ab = lub[a][b];
-      let hab = lub[h[a]][h[b]];
-      if(h[ab]==hab) continue;
-      cnt += 3;
-      h[ab] = glb[h[ab]][hab];
-      h[a] = glb[h[a]][h[ab]];
-      h[b] = glb[h[b]][h[ab]];
-      pending = (n*(n+1))>>1;
-    }
-    return {h, cnt};
-  }
-
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetEasy2 = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    cnt = m;
-    const queue = range(n);
-    const inQueue = range(n).map(()=>true);
-    while(queue.length){
-      const x = /**@type {number}*/(queue.pop());
-      inQueue[x] = false;
-      for(let [a,b,ab] of triples[x]){
-        cnt += 1;
-        let hab = lub[h[a]][h[b]];
-        if(h[ab]==hab) continue;
-        cnt += 3;
-        if(!inQueue[ab]) inQueue[ab]=true, queue.push(ab);
-        const ha = glb[h[a]][h[ab]];
-        const hb = glb[h[b]][h[ab]];
-        if(h[a]!=ha && !inQueue[a]) inQueue[a]=true, queue.push(a);
-        if(h[b]!=hb && !inQueue[b]) inQueue[b]=true, queue.push(b);
-        h[ab] = glb[h[ab]][hab];
-        h[a] = ha;
-        h[b] = hb;
-      }
-    }
-    return {h, cnt};
-  }
-  /** @param {number[]} f @param {number[]?} g*/
-  const GMeetEasy3 = (f, g=null)=>{
-    let cnt = 0;
-    const h = range(n).map(x => glb[f[x]][g?(cnt++,g[x]):top]);
-    cnt = m;
-    while(true){
-      let h0 = [...h];
-      for(let [a,b] of uncomparables){
-        const ab = lub[a][b];
-        cnt += 3;
-        h[ab] = glb[h[ab]][lub[h[a]][h[b]]];
-        h[a] = glb[h[a]][h[ab]];
-        h[b] = glb[h[b]][h[ab]];
-      }
-      if(range(n).reduce((cum, i)=> cum&&(h[i]==h0[i]), true)) break;
-    }
-    return {h, cnt};
-  }
 
   return {
-    //GMeetNaiveSlowest, GMeetNaiveSlow,
-    GMeetNaiveLoop,
-    GMeetEasy,
-    GMeetEasy2,
-    GMeetEasy3,
-    GMeetMonoNaive,
-    GMeetMonoDfs,
-    GMeetMonoLate,
+    GMeetStar,
+    GMeetMonoStar,
+    GMeetMonoLazy,
     GMeetPlus,
-    //GMeetConfirmMono, GMeetConfirm, DMeetIrr,
-    //GMeetMonoLateIrr, GMeetMonoLateIrr2, GMeetTest,
+    DMeetPlus,
   };
 }
 
