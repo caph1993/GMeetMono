@@ -548,6 +548,15 @@ return ({})=>{
   preact.useEffect(()=>{global.nFunctions=nFunctions;}, [nFunctions]);
   preact.useEffect(()=>{global.timeLimit=timeLimit;}, [timeLimit]);
 
+  const rows = preact.useMemo(()=>{
+    const rows =  d3.flatGroup(data, ({n})=>n)
+    .map(([n, arrN])=>{
+      const byName = d3.index(arrN, d=>d.name);
+      return [n, algoNames.map(name=>[name, byName.get(name)])];
+    })
+    return rows;
+  }, [data])
+
   return caph.parse`
   <div (component)="@tabs" labels=${['Experiments']}>
     <div>
@@ -568,13 +577,17 @@ return ({})=>{
           ${algoNames.map(name=>caph.parse`<td>${name}</td>`)}
           </thead>
           <tbody>
-          ${d3.flatGroup(data, ({n})=>n).map(([n, arr])=>
-            caph.parse`<tr><td>${n}</>${algoNames.map(thisName=>
-              caph.parse`<td>${
-                arr.filter(({name})=>thisName==name)
-                .map(d=>!isTime?d[prop].toFixed(0):caph.parse`${(d[prop]*1e6).toFixed(0)} $\mu$s`)[0]||'TL'}</td>`
-            )}</tr>`
-          )}
+          ${rows.map(([n,d])=>caph.parse`
+            <tr>
+              <td>${n}</>
+              ${d.map(([name, d])=> !d? caph.parse`<td>TL</td>`:caph.parse`
+              <td>
+              ${
+                !isTime?d[prop].toFixed(0):
+                caph.parse`${(d[prop]*1e6).toFixed(0)} $\mu$s`
+              }
+              </td>`)}
+            </tr>`)}
           </tbody>
         </table>`
         )}
