@@ -72,7 +72,7 @@ const latticeAlgorithmsWithCounters = (L)=>{
     name, algorithm:_algos[name],
     fails:0, failExample:null,
     timeSum:0, timeAvg:0, timeMax:0,
-    cntSum:0, cntMax:0, 
+    cntSum:0, cntAvg:0, cntMax:0, 
   }));
 }
 
@@ -132,7 +132,9 @@ const tests = function*(L, algos, ntc, typeOfF){
       
       e.timeSum += msElapsed*1e-3;
       e.timeAvg = e.timeSum/(tc+thisBatch);
+      e.timeMax = Math.max(e.timeMax, msElapsed*1e-3/thisBatch);
       e.cntSum += d3.sum(outputs, d=>d.cnt);
+      e.cntAvg = e.cntSum/(tc+thisBatch);
       e.cntMax = Math.max(e.cntMax, d3.max(outputs, d=>d.cnt));
 
       for(let [h, out, exp] of d3.zip(inputs, outputs.map(({h})=>h), expected)){
@@ -276,7 +278,7 @@ return ({})=>{
       <br>
       Seed for presets: seed(${seed.toFixed(0)}). ${[0,1,2,42].map(k=>caph.parse`
         <button disabled=${running} onClick=${()=>setSeed(k)}>${`seed(${k})`}</button>
-      `)}
+      `)} (re-click on a preset to apply)
       <br>
       <br>
       <${caph.plugin('vizLattice')} lattice=${loading?null:lattice}/>
@@ -324,10 +326,10 @@ return ({})=>{
 caph.pluginDefs['paperExperiments'] = (()=>{
 
 const global = {
-  xAxis: [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000],
+  xAxis: [1, 2, 5, 10, 20, 50, 100, 200, 500],
   running: false,
-  nLattices: 10,
-  nFunctions: 1000,
+  nLattices: 12,
+  nFunctions: 500,
   timeLimit: 1e-3,
   // experiments: localStorage.getItem('paperExperiments')||[],
   changed: false,
@@ -354,8 +356,8 @@ const loop = async ()=>{
       for(let r of tests(L, algos, global.nFunctions, typeOfF)){
         if(!global.running) return;
       }
-      for(let {name, timeAvg} of algos){
-        global.plotData.push({name, n, lSeed, timeAvg});
+      for(let {name, timeAvg, timeMax, cntMax, cntSum, cntAvg} of algos){
+        global.plotData.push({name, n, lSeed, timeAvg, timeMax, cntMax, cntSum, cntAvg});
         if(timeAvg>1.2*global.timeLimit) timedOut.add(name);
       }
       global.changed = true;
@@ -372,15 +374,23 @@ const loop = async ()=>{
 })();
 
 
-const d3ObjPromise = async ()=>{
+
+const plots = [
+  {tab:'Max time', prop:'timeMax', yLabel:"WC runtime [seconds]", isTime:true},
+  {tab:'Avg time', prop:'timeAvg', yLabel:"Avg runtime [seconds]", isTime:true},
+  {tab:'Max cnt', prop:'cntMax', yLabel:"WC counts", isTime:false},
+  {tab:'Avg cnt', prop:'cntAvg', yLabel:"Avg counts", isTime:false},
+];
+
+const d3ObjPromise = async ({yLabel, prop, isTime})=>{
   const margin = {top: 10, right: 200, bottom: 50, left: 60},
   width = 600 - margin.left - margin.right,
   height = 300 - margin.top - margin.bottom;
   
-  await caph.until(()=>document.querySelector('#my_dataviz'));
+  await caph.until(()=>document.querySelector(`#d3${prop}`));
   await caph.sleep(500); // :/
   // append the svg object to the body of the page
-  const svg = d3.select("#my_dataviz")
+  const svg = d3.select(`#d3${prop}`)
   .append("svg")
   .attr("width", width + margin.left + margin.right)
   .attr("height", height + margin.top + margin.bottom)
@@ -397,7 +407,7 @@ const d3ObjPromise = async ()=>{
 
   // Add Y axis
   const y = d3.scaleLog()
-    .domain([1e-6, global.timeLimit])
+    .domain(isTime?[1e-6, global.timeLimit]:[1, 2e6])
     .range([ height, 0 ]);
   svg.append("g")
     .call(d3.axisLeft(y));
@@ -420,7 +430,7 @@ const d3ObjPromise = async ()=>{
     .attr("y", -42)
     .attr("dx", -height*0.5)
     .attr("transform", "rotate(-90)")
-    .text("WC runtime [seconds]");
+    .text(yLabel);
   
   const linesContainer = svg.append("g");
 
@@ -451,9 +461,10 @@ const d3ObjPromise = async ()=>{
       .style("alignment-baseline", "middle")
 
   const refs = [];
+  const factor = isTime?1e-6:1;
   for(let power of [1, 2, 3])
     for(let x of global.xAxis)
-      refs.push({power, x, y: 1e-6*Math.pow(x, power)})
+      refs.push({power, x, y: factor*Math.pow(x, power)})
   svg.selectAll("referenceCurves")
     .data(d3.group(refs, d=>d.power))
     .join("path")
@@ -465,15 +476,16 @@ const d3ObjPromise = async ()=>{
         .y(({y:yy})=>y(yy))
         (d[1])
       ))
-    
   return {svg, x, y, color, linesContainer};
 }
 
 const groupedData = ()=>{
   let data = d3.flatRollup(global.plotData,
     (values)=>({
+      timeMax: Math.max(1e-6, d3.max(values, d=>d.timeMax)),
       timeAvg: Math.max(1e-6, d3.mean(values, d=>d.timeAvg)),
-      timeMax: Math.max(1e-6, d3.max(values, d=>d.timeAvg)),
+      cntMax: Math.max(1, d3.max(values, d=>d.cntMax)),
+      cntAvg: Math.max(1, d3.mean(values, d=>d.cntAvg)),
     }),
     d => d.name, d => d.n,
   );
@@ -481,7 +493,7 @@ const groupedData = ()=>{
   return data;
 }
 
-const rePlot = ({svg, x, y, color, linesContainer})=>{
+const rePlot = ({svg, x, y, color, linesContainer, prop})=>{
   const data = groupedData();
 
   linesContainer.selectAll("path").remove();
@@ -495,7 +507,7 @@ const rePlot = ({svg, x, y, color, linesContainer})=>{
       .attr("stroke-width", 1.5)
       .attr("d", d=>(d3.line()
         .x(({n})=>x(n))
-        .y(({timeMax})=>y(timeMax))
+        .y(d=>y(d[prop]))
         (d[1])
       ))
   linesContainer.selectAll("myDots")
@@ -504,18 +516,19 @@ const rePlot = ({svg, x, y, color, linesContainer})=>{
       .attr("fill", ({name})=>color(name))
       .attr("r", 2)
       .attr("cx", ({n})=>x(n))
-      .attr("cy", ({timeMax})=>y(timeMax))
+      .attr("cy", d=>y(d[prop]))
   return;
 }
 
 (async ()=>{
-  const d3Obj = await d3ObjPromise();
+  const d3Objs = d3.zip(plots, await Promise.all(plots.map(d=>d3ObjPromise(d))))
+    .map(([a,b])=>({...a, ...b}));
   global.changed = true;
   while(true){
     while(!global.changed) await caph.sleep(500);
     global.changed = false;
     global.uiSetters.setData([...groupedData()]);
-    await rePlot(d3Obj);
+    for(let d of d3Objs) await rePlot(d);
   }
 })();
 return ({})=>{
@@ -535,7 +548,6 @@ return ({})=>{
   preact.useEffect(()=>{global.nFunctions=nFunctions;}, [nFunctions]);
   preact.useEffect(()=>{global.timeLimit=timeLimit;}, [timeLimit]);
 
-  
   return caph.parse`
   <div (component)="@tabs" labels=${['Experiments']}>
     <div>
@@ -545,22 +557,27 @@ return ({})=>{
       Time limit: ${(timeLimit*1e6).toFixed(0)} $\mu$s<br>
       <button disabled=${running} onClick=${()=>setRunning(true)}>Run</button>
       <button disabled=${!running} onClick=${()=>setRunning(false)}>Stop</button>
-      ${preact.useMemo(()=>caph.parse`<div id="my_dataviz" />`, [])}
-      <table class="table">
-        <thead>
-        <th>$n$</th>
-        ${algoNames.map(name=>caph.parse`<td>${name}</td>`)}
-        </thead>
-        <tbody>
-        ${d3.flatGroup(data, ({n})=>n).map(([n, arr])=>
-          caph.parse`<tr><td>${n}</>${algoNames.map(thisName=>
-            caph.parse`<td>${
-              arr.filter(({name})=>thisName==name)
-              .map(({timeMax})=>caph.parse`${(timeMax*1e6).toFixed(0)} $\mu$s`)[0]||'TL'}</td>`
-          )}</tr>`
+
+
+      <div (component)="@tabs" labels=${plots.map(({tab})=>tab)}>
+      ${plots.map(({isTime, prop})=>caph.parse`
+        ${preact.useMemo(()=>caph.parse`<div id=${`d3${prop}`} />`, [])}
+        <table class="table">
+          <thead>
+          <th>$n$</th>
+          ${algoNames.map(name=>caph.parse`<td>${name}</td>`)}
+          </thead>
+          <tbody>
+          ${d3.flatGroup(data, ({n})=>n).map(([n, arr])=>
+            caph.parse`<tr><td>${n}</>${algoNames.map(thisName=>
+              caph.parse`<td>${
+                arr.filter(({name})=>thisName==name)
+                .map(d=>!isTime?d[prop].toFixed(0):caph.parse`${(d[prop]*1e6).toFixed(0)} $\mu$s`)[0]||'TL'}</td>`
+            )}</tr>`
+          )}
+          </tbody>
+        </table>`
         )}
-        </tbody>
-      </table>
       </>
     </>
   </>
