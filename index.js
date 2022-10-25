@@ -1,4 +1,5 @@
 //@ts-check
+/// <reference path="./lattices.js" />
 /// <reference path="./putTools.js" />
 
 var algoNames = [...Object.keys(latticeAlgorithms(Lattice.powerset(1)))];

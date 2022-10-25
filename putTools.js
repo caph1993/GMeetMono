@@ -26,6 +26,7 @@ async function until(/** @type {()=>any}*/ func, { ms = 200, timeout = 0 } = {})
 
 var /** @type {(...args)=>HTMLElement}*/ put = eval("window['put']");
 var /** @type {*}*/ katex = eval("window['katex']");
+var /** @type {*}*/ d3 = eval("window['d3']");
 
 document.head.append(put('style', `
 .parBreak { margin-top:1em; }
