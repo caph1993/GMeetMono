@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!-- spell-checker: words katex eqdef mathtt mathcal mathbb mathrm defeq lmroman ifstar coloneqq eqqcolon stackrel scriptscriptstyle operatorname sqleq sqgeq sqgt sqlt -->
+<html lang="en">
+<head>
+  <script>// @ts-check</script>
+  <script>/// <reference path="./putTools.js" /></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- <script src="/home/carlos/Documents/caph-docs/dist/caph-docs.js"></script> -->
+  <!-- <script src="/home/carlos/Documents/projects/repos-caph-info/caph-docs-github/dist/caph-docs.min.js"></script> -->
+  <script src="https://cdn.jsdelivr.net/gh/caph1993/caph-docs@6.3/dist/caph-docs.min.js"></script>
+
+  <script src="./libraries/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/@hpcc-js/wasm@1.16.1/dist/index.min.js"></script>
+  <script src="https://unpkg.com/d3-graphviz@4.4.0/build/d3-graphviz.min.js"></script>
+  <!-- <script src="./libraries/wasm@1.16.1.min.js"></script> -->
+  <!-- <script src="./libraries/d3-graphviz@4.4.0.js"></script> -->
+  <script src="./libraries/put.js"></script>
+  <script src="./libraries/katex.min.js"></script>
+  <link  href="./fonts/katex-nofonts.min.css" rel="stylesheet" >
+  
+  <script src="./putTools.js"></script>
+
+  <style>html{font-family: Latin Modern Roman;}</style>  
+  <style>
+  .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<title>⇶ GMeetMono</title>
+<style>p a{color: #0c4090;}</style>
+<style>.katex{font: Latin Modern Roman;}</style>
+<style>.href-target:target {background-color: #ffa;}</style>
+<style>
+.bold{font-weight: bold;}
+.no-bold{font-weight: normal;}
+.algorithm{margin: 0 1vw 0 1vw; padding: 0.5vh 1vw 0.5vh 1vw;}
+.algorithm{border: 1px solid;}
+.algorithm .indent-1em{
+  padding-left: calc(1vw + 0.3em);
+  margin-left: calc(1vw + 0.3em);
+  border-left: 1px solid;
+}
+.algorithm span, .algorithm figcaption{font-weight: normal;}
+.caph-katex-display-parent{ overflow-x: scroll;}
+pre {font-size: 0.8em;}
+</style>
+
+<script>
+(()=>{
+  var katexMacros = {
+    ...Object.fromEntries([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.matchAll(/./g)].map(C=>   [`bb${C}`, `{\\mathbb ${C}}`] )), ...Object.fromEntries([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.matchAll(/./g)].map(C=>   [`cal${C}`, `{\\mathcal ${C}}`] )), T: '\\intercal', eqdef: `\\@ifstar{\\eqdef@B}{\\eqdef@A}`, 'eqdef@A': `\\stackrel{{\\scriptscriptstyle \\mathrm{def}}}{\\coloneqq}`, 'eqdef@B': `\\coloneqq`, defeq: `\\@ifstar{\\defeq@B}{\\defeq@A}`, 'defeq@A': `\\stackrel{{\\scriptscriptstyle \\mathrm{def}}}{\\eqqcolon}`, 'defeq@B': `\\eqqcolon`, abs: `\\@ifstar{\\abs@B}{\\abs@A}`, 'abs@A': `{|#1|}`, 'abs@B': `{\\left|#1\\right|}`, norm: `\\@ifstar{\\norm@B}{\\norm@A}`, 'norm@A': `{\\Vert#1\\Vert}`, 'norm@B': `{\\left\\lVert\\{#1\\right\\rVert}`, 'given': `\\given@A`, 'given@A': `{\\mkern1.5mu\\mid\\mkern2mu}`, 'given@B': `\\middle|`, 'useGiven@A': `{\\def\\given{\\given@A}#1}`, 'useGiven@B': `{\\def\\given{\\given@B}#1}`, '@equals': `=`, '@equals@A': `{\\mkern0mu=\\mkern1mu}`, '@equals@B': `{\\mkern0.5mu=\\mkern1.5mu}`, 'useEquals@A': `{\\def\\@equals{\\@equals@A}#1}`, 'useEquals@B': `{\\def\\@equals{\\@equals@B}#1}`, 'style@A': `\\useEquals@A{#1}`, 'style@B': `\\useEquals@B{\\useGiven@B{#1}}`, set: `\\@ifstar{\\set@B}{\\set@A}`, 'set@A': `\\style@A{\\{#1\\}}`, 'set@B': `\\style@B{\\left\\{#1\\right\\}}`, lr: `\\@ifstar{\\lr@B}{\\lr@A}`, 'lr@A': `\\style@A{(#1)}`, 'lr@B': `\\style@B{\\left(#1\\right)}`, LR: `\\@ifstar{\\LR@B}{\\LR@A}`, 'LR@A': `\\style@A{[#1]}`, 'LR@B': `\\style@B{\\left[#1\\right]}`, 'Prob': `\\bbP\\lr`, 'ProbSub': `\\operatorname*{\\bbP}_{#1}\\lr`, 'Expe': `\\bbE\\LR`, 'ExpeSub': `\\operatorname*{\\bbE}_{#1}\\LR`,
+  }
+
+  let sq = {join: '\\sqcup', meet: '\\sqcap', sqleq: '\\sqsubseteq', sqgeq: '\\sqsupseteq', sqlt: '\\sqsubset', sqgt: '\\sqsupset'};
+  sq = {
+    ...sq,
+    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
+      [`${key}E`,`${value}_{\\calE}`]
+    ))),
+    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
+      [`${key}F`,`${value}_{\\calF}`]
+    ))),
+  };
+  for(let [key, value] of Object.entries({...katexMacros, ...sq})){
+    katex.__defineMacro(`\\${key}`, value);
+  }
+})();
+
+</script>
+
+<!-- spell-checker: words Camilo Rueda pointwise powerset -->
+
+<new-main></new-main>
+
+
+<script src="./libraries/codemirror-5.55.0/lib/codemirror.js"></script>
+<script src="./lattices.js"></script>
+<script src="./index.js"></script>
+
+<script src="./libraries/codemirror-5.55.0/mode/javascript/javascript.js"></script>
+<script src="./libraries/codemirror-5.55.0/mode/python/python.js"></script>
+<script src="./libraries/codemirror-5.55.0/mode/xml/xml.js"></script>
+<script src="./libraries/codemirror-5.55.0/mode/css/css.js"></script>
+<script src="./libraries/codemirror-5.55.0/mode/htmlmixed/htmlmixed.js"></script>
+<script src="./libraries/codemirror-5.55.0/addon/search/searchcursor.js"></script>
+<script src="./libraries/codemirror-5.55.0/addon/search/search.js"></script>
+<script src="./libraries/codemirror-5.55.0/addon/scroll/scrollpastend.js"></script>
+<script src="./libraries/codemirror-5.55.0/keymap/sublime.js"></script>
+<script src="./libraries/codemirror-5.55.0/addon/display/autorefresh.js"></script>
+
+<link  href="./libraries/codemirror-5.55.0/lib/codemirror.css" rel="stylesheet">
+<link  href="./libraries/codemirror-5.55.0/theme/monokai.css" rel="stylesheet">
+
+<link  href="./fonts/font-katex.css" rel="stylesheet" >
+<link  href="./fonts/font-lroman.css" rel="stylesheet" >
+
+<style>
+span.katex.display.formula{
+  text-align: center;
+}
+span.katex{
+  font-size: 1em;
+}
+.caph-katex-display-parent{
+  width:100%;
+  text-align:center;
+  overflow-x: scroll;
+}
+div.caph-paragraph + div.caph-paragraph { margin-top: 1em; }
+.caph-paragraph h1,h2,h3,h4,h5,h6,ul,ol{ margin:0; }
+code {
+  padding: 0em 0.2em;
+  background-color: #f8f9fa;
+  color: #000;
+  border: 1px solid #eaecf0;
+  border-radius: 2px;
+}
+</style>
+
+<style>
+.codemirror-container{
+  height: 100%;
+}
+.codemirror-container .CodeMirror{
+  width: 100%;
+  height: 100%;
+}
+
+.codemirror-container .CodeMirror-line {
+  width: unset;
+}
+</style>
+<style>
+body {
+  background: no-repeat url(./paper.png) 0 0;
+  background-color: #EBEBEB;
+  background-repeat: repeat;
+}
+</style>
+</body>
+</html>

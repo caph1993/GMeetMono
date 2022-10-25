@@ -1,7 +1,6 @@
 //@ts-check
 /// <reference path="./lattices.js" />
 /// <reference path="./other-tests/types.js" />
-/// <reference path="./xxhash.js"/>
 
 
 caph.injectStyle(`
@@ -65,8 +64,8 @@ caph.pluginDefs['vizLattice'] = ({lattice})=>{
 
 
 
-const algoNames = [...Object.keys(latticeAlgorithms(Lattice.powerset(1)))];
-const latticeAlgorithmsWithCounters = (L)=>{
+var algoNames = [...Object.keys(latticeAlgorithms(Lattice.powerset(1)))];
+var latticeAlgorithmsWithCounters = (L)=>{
   const _algos = latticeAlgorithms(L);
   return algoNames.map(name=>({
     name, algorithm:_algos[name],
@@ -76,7 +75,7 @@ const latticeAlgorithmsWithCounters = (L)=>{
   }));
 }
 
-const typesOfF = [
+var typesOfF = [
   'join of monotone and join-endomorphism',
   'monotone',
   'meet of join-endomorphisms',
@@ -85,7 +84,7 @@ const typesOfF = [
 ];
 
 /** @param {Lattice} L @param {any} algos @param {number} ntc @param {string} typeOfF*/ 
-const tests = function*(L, algos, ntc, typeOfF){
+var tests = function*(L, algos, ntc, typeOfF){
   //console.log(L);
   const fails = {};
   const failExample = {};
@@ -647,12 +646,12 @@ code{ font-size: 0.8em; white-space: pre-wrap; }
 
 
 const modalContext = preact.createContext();
-const mainContent = document.querySelector('#root-content')?.innerHTML;
-//console.log(mainContent)
+const oldMainContent = document.querySelector('#root-content')?.innerHTML;
+//console.log(oldMainContent)
 
 const Main = ({})=>{
   const [modal, setModal] = preact.useState(null);
-  const Component = preact.useMemo(()=>caph.parseHtml(mainContent), []);
+  const Component = preact.useMemo(()=>caph.parseHtml(oldMainContent), []);
   return caph.parse`
   <${modalContext.Provider} value=${setModal}>
     <div class=${'modal-parent display-'+(!!modal)} onClick=${(ev)=>(ev.stopPropagation(), setModal(null))}>
