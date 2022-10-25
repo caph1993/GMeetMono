@@ -8,6 +8,21 @@
 /** @typedef {Node|RenderConstant1} RenderConstant2 */
 /** @typedef {RenderConstant2|RenderConstant2[]} RenderConstant3 */
 
+async function sleep(ms) {
+  await new Promise((ok, err) => setTimeout(ok, ms));
+}
+async function until(/** @type {()=>any}*/ func, { ms = 200, timeout = 0 } = {}) {
+  if (timeout && ms > timeout) ms = timeout / 10;
+  let t0 = (new Date()).getTime();
+  let value;
+  while (!(value = await func())) {
+    if (timeout && (new Date()).getTime()-t0 > timeout)
+      throw 'timeout';
+    await sleep(ms);
+  }
+  return value;
+}
+
 
 var /** @type {(...args)=>HTMLElement}*/ put = eval("window['put']");
 var /** @type {*}*/ katex = eval("window['katex']");
@@ -139,7 +154,7 @@ function putCodemirror(code, options){
   #${id} .CodeMirror{height: 100%;}
   `));
   const codeDiv = put(`div#${id}`);
-  caph.until(() => document.querySelector(`#${id}`)).then(() => {
+  until(() => document.querySelector(`#${id}`)).then(() => {
     options = Object.assign({
       unindent: true,
       keyMap: 'sublime',

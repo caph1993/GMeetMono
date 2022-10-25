@@ -128,7 +128,7 @@ const paperExperiments = (()=>{
     for(let n of global.xAxis){
       const rngLSeed = RNG(rngMain());
       for(let lSeed of range(global.nLattices).map(()=>rngLSeed())){
-        await caph.sleep(0); // Let the browser resolve other async actions
+        await sleep(0); // Let the browser resolve other async actions
         const L = Lattice.preset(n, lSeed); // To do: Use seed!
         const typeOfF = 'join of monotone and join-endomorphism';
         const algos = latticeAlgorithmsWithCounters(L).filter(({name})=>!timedOut.has(name));
@@ -146,7 +146,7 @@ const paperExperiments = (()=>{
   }
   (async ()=>{
     while(true){
-      while(!running$.value) await caph.sleep(50);
+      while(!running$.value) await sleep(50);
       await loop();
       console.log('SAVE');
     }
@@ -157,8 +157,8 @@ const paperExperiments = (()=>{
     width = 600 - margin.left - margin.right,
     height = 300 - margin.top - margin.bottom;
     
-    await caph.until(()=>document.querySelector(`#xd3${prop}`));
-    await caph.sleep(500); // :/
+    await until(()=>document.querySelector(`#xd3${prop}`));
+    await sleep(500); // :/
     // append the svg object to the body of the page
     const svg = d3.select(`#xd3${prop}`)
     .append("svg")
@@ -295,7 +295,7 @@ const paperExperiments = (()=>{
       .map(([a,b])=>({...a, ...b}));
     global.changed = true;
     while(true){
-      while(!global.changed) await caph.sleep(500);
+      while(!global.changed) await sleep(500);
       global.changed = false;
       plotData$.set([...groupedData()]);
       for(let d of d3Objs) await rePlot(d);
@@ -412,7 +412,7 @@ const playgroundElement = (()=>{
     dotCode$.subscribe(async (dotCode)=>{
       if(!dotCode) put(graphDiv, '.graph-hidden');
       else{
-        await caph.until(()=>d3.select(`#graph${graphId}`));
+        await until(()=>d3.select(`#graph${graphId}`));
         put(graphDiv, '!graph-hidden');
         d3.select(`#graph${graphId}`).graphviz().renderDot(dotCode);
       }
@@ -601,7 +601,7 @@ Progress: ${progress}/${ntc}, of which,
     const typeOfF = typeOfF$.value;
     const selected = Object.assign({}, selectedAlgos);
     report$.set([putText('...')]);
-    await caph.sleep(100);
+    await sleep(100);
     const startMs = Date.now();
     const nextIntervalMs = 100;
     let nextOut = startMs + nextIntervalMs;
@@ -611,7 +611,7 @@ Progress: ${progress}/${ntc}, of which,
         if(Date.now()>nextOut||result.progress==ntc){
           nextOut+=nextIntervalMs;
           updateReport({startMs, ntc, L, algos}, result);
-          await caph.sleep(100/ntc);
+          await sleep(100/ntc);
         }
         if(!running$.value||result.progress==ntc){
           let {failExample} = result;
@@ -633,7 +633,7 @@ Progress: ${progress}/${ntc}, of which,
   const setLattice = async (setCallback)=>{
     if(loading$.value) return; // already loading (can't cancel)
     loading$.set(true);
-    await caph.sleep(250);
+    await sleep(250);
     lattice$.set(setCallback()); // takes time
     loading$.set(false);
   }
