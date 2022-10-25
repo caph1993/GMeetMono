@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<!-- spell-checker: words katex eqdef mathtt mathcal mathbb mathrm defeq lmroman ifstar coloneqq eqqcolon stackrel scriptscriptstyle operatorname sqleq sqgeq sqgt sqlt -->
+<html lang="en">
+<head>
+  <script>// @ts-check</script>
+  <script>/// <reference path="./GMeetMono.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- <script src="/home/carlos/Documents/caph-docs/dist/caph-docs.js"></script> -->
+  <!-- <script src="/home/carlos/Documents/projects/repos-caph-info/caph-docs-github/dist/caph-docs.min.js"></script> -->
+  <script src="https://cdn.jsdelivr.net/gh/caph1993/caph-docs@6.3/dist/caph-docs.min.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/@hpcc-js/wasm@1.16.1/dist/index.min.js"></script>
+  <script src="https://unpkg.com/d3-graphviz@4.4.0/build/d3-graphviz.js"></script>
+
+</head>
+<body>
+
+<title>⇶ GMeetMono</title>
+<style>p a{color: #0c4090;}</style>
+<style>.katex{font: Latin Modern Roman;}</style>
+<style>.href-target:target {background-color: #ffa;}</style>
+<style>
+.bold{font-weight: bold;}
+.no-bold{font-weight: normal;}
+.algorithm{margin: 0 1vw 0 1vw; padding: 0.5vh 1vw 0.5vh 1vw;}
+.algorithm{border: 1px solid;}
+.algorithm .indent-1em{
+  padding-left: calc(1vw + 0.3em);
+  margin-left: calc(1vw + 0.3em);
+  border-left: 1px solid;
+}
+.algorithm span, .algorithm figcaption{font-weight: normal;}
+.caph-katex-display-parent{ overflow-x: scroll;}
+</style>
+
+<script>
+caph.mathMacros = {
+  ...caph.mathMacros,
+  ...((()=>{
+  const sq = {join: '\\sqcup', meet: '\\sqcap', sqleq: '\\sqsubseteq', sqgeq: '\\sqsupseteq', sqlt: '\\sqsubset', sqgt: '\\sqsupset'};
+  return {
+    ...sq,
+    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
+      [`${key}E`,`${value}_{\\calE}`]
+    ))),
+    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
+      [`${key}F`,`${value}_{\\calF}`]
+    ))),
+  }})()),
+}
+</script>
+
+<!-- spell-checker: words Camilo Rueda pointwise powerset -->
+
+<template id="root-content">
+<div (spacing)="tex">
+<h1>GMeet algorithms</h1>
+October 2022.
+
+
+<!-- Create a div where the graph will take place -->
+
+This document presents the implementation and tests of `GMeetStar`, `GMeetMonoStar`, `GMeetMonoLazy` and `GMeetPlus`.
+
+Paper experiments:
+
+<div (component)="paperExperiments"></div>
+
+Playground:
+
+<div (component)="latticeCode"></div>
+
+
+<h2>Notation</h2>
+
+Throughout this document we use the following notation.
+$L$ is a non-empty finite lattice with order $\sqleq$ and join and meet operators $\join, \meet$.
+The bottom element of $L$ is $\bot$.
+The set of all endomorphisms (functions $f:L\to L$) is denoted as $\calF$, and it is a lattice with the order $$
+f \sqleqF g \iff (\forall x\in L)\ f(x)\sqleq g(x).
+$$
+The join and meet operators in $\calF$ (i.e. $\joinF$ and $\meetF$) are the pointwise join and meet operators in $L$.
+The endomorphisms that preserve least upper bounds and map $\bot$ to $\bot$ are called <i>join-endomorphisms</i>, and $\calE\subseteq\calF$ is the set of all join-endomorphisms, that is,$$
+\calE\eqdef\set{f:L\to L \given f(\bot)=\bot \,\wedge\, \lr{\forall a,b\in L}\,f(a\join b)= f(a)\join f(b)}.
+$$
+The order $\sqleqE$ for $\calE$ is defined as the restriction of $\sqleqF$ to $\calE$, and with this order, $\calE$ is also a lattice.
+The join operator $\joinE$ coincides with $\joinF$ (pointwise $\join$), but the meet $\meetF$ does not coincide with $\meetF$.
+
+
+<h2>Algorithms of reference</h2>
+
+All the algorithms presented compute the maximal join-endomorphism below a given endomorphism.
+
+The implementations are based on the following abstract algorithms that do not indicate how to find the pairs $a,b$.
+
+<figure class="algorithm bold">
+$\mathtt{GMeet}(h)$:
+<div class="indent-1em">
+  while $\exists a,b\in L$ <span>with</span> $h(a\join b) \neq h(a)\join h(b)$:
+  <div class="indent-1em">
+    if $h(a\join b) \sqgt h(a) \join h(b)$:
+    <div class="indent-1em">
+      $h(a\join b) \leftarrow h(a) \join h(b)$
+    </div>
+    else:
+    <div class="indent-1em">
+      $h(a) \leftarrow h(a) \meet h(a\join b)$<br>
+      $h(b) \leftarrow h(b) \meet h(a\join b)$
+    </div>
+  </div>
+  return $h$
+</div>
+<!-- <div class="no-bold">
+<b>Context</b>:
+<div class="indent-1em">
+  Lattice $L$ with order $\sqleq$ and join and meet operators $\join, \meet$; set $\calE$ of all functions $f:L\to L$ that preserve least upper bounds and map $\bot$ to $\bot$.
+</div>
+<b>Input</b>:
+<div class="indent-1em">
+  Functions $f, g \in \calE$.
+</div>
+</div> -->
+<figcaption>
+`GMeet` algorithm. $\mathtt{GMeet}(f \meetF g) \eqdef f \meetE g$.
+</figcaption>
+</figure>
+
+<figure class="algorithm bold">
+$\mathtt{GMeetMono}(f, g)$:
+<div class="indent-1em">
+  $h \eqdef f \meetF g$<br>
+  while $\exists a,b\in L$ <span>with</span> $h(a\join b) \neq h(a)\join h(b)$:
+  <div class="indent-1em">
+    if $h(a\join b) \sqgt h(a) \join h(b)$:
+    <div class="indent-1em">
+      $c = h(a) \join h(b)$<br>
+      for each $x \sqleq a\join b$
+      <div class="indent-1em">
+        $h(x) \leftarrow h(x) \meet c$
+      </div>
+    </div>
+  </div>
+  return $h$
+</div>
+<!-- <div class="no-bold">
+(Same context and inputs as `GMeet`)
+</div> -->
+<figcaption>
+`GMeetMono` algorithm. $\mathtt{GMeetMono}(f \meetF g) \eqdef f \meetE g$.
+</figcaption>
+</figure>
+
+
+<h2>Implementations</h2>
+
+
+Notation following variables that are used in the algorithms are present in the lattice `L` and are assumed to be precomputed:
+```javascript
+const {n, m, lub, leq, glb, geq, gt, lt, children, isChild,
+  walkDown, walkUp, parents, top, bottom, topoUpDown, topoDownUp} = L;
+```
+Notation:
+`n` is the number of nodes in the lattice.
+`m` is the number of edges in the Hasse diagram of the lattice.
+`lub[a][b]` is the join (least upper bound) of `a` and `b`.
+`glb[a][b]` is the meet (greatest lower bound).
+`leq[a][b]` is the boolean for $a \sqleq b$.
+`geq[a][b]` is the boolean for $a \sqgeq b$.
+`lt[a][b]` is the boolean for $a \sqlt b$.
+`gt[a][b]` is the boolean for $a \sqgt b$.
+`children[b]` is the list of (direct) children of $b$.
+`parents[a]` is the list of (direct) parents of $a$.
+
+
+The implementation of the algorithms, including the counters is shown below.
+
+<div (component)="implementations"></div>
+
+See the <a href="./lattices.js">full code</a>.
+
+</div>
+<div style="margin-top:10em"></div>
+</template>
+
+<div id="root">Loading page... Please reload the page if it does not load automatically after 5 seconds<br>Supported browsers: Chrome, Firefox.</div>
+
+<script src="./lattices.js"></script>
+<script src="./GMeetMono.js"></script>
+
+</body>
+</html>
